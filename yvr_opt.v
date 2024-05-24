@@ -38,4 +38,4 @@
 /**********************************************************************************/
 `define INSTRET_64 /* 64-bit */
 // `define INSTRET_32 /* 32-bit */
-// `define INSTRET_0 /* none *
+// `define INSTRET_0 /* none */
