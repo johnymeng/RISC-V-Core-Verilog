@@ -137,9 +137,9 @@ end
 /* load/store/amo state machine                                                          */
 /*****************************************************************************************/
   always @ (mem32_reg or addr_out or type_out) begin
-    casex ({mem32_reg, type_out[1:0], addr_out[1:0]})
-      5'b001x1,
-      5'b01xx0,
+    casex ({mem32_reg, type_out[1:0], addr_out[1:0]}) //type_out[1:0] specifies size of data being operated on (byte, half word, word)
+      5'b001x1,                                       //addr_out[1:0] specifies starting byte address of operation
+      5'b01xx0, 
       5'b10111,
       5'b11x01,
       5'b11x1x: ls_ph_ini = 4'b0111;
@@ -267,4 +267,162 @@ end
       7'b11x00xx: ls_ble_out = 4'b1111;
       default:    ls_ble_out = 4'b0011;
       endcase
+    end
+
+/*****************************************************************************************/
+/* memory interface                                                                      */
+/*****************************************************************************************/
+  assign mem_addr  = (stall_ldst) ? ls_addr_reg      :
+                     (stall_cmp)  ? {pc_2_reg, 1'b0} : {pc_1_reg, 1'b0};
+  assign mem_lock  = stall_ldst && amo_6_reg;
+  assign mem_ble   = (ls_run) ? ls_ble_out : {mem32_reg, mem32_reg, 2'b11};
+  assign mem_trans = {ls_run, ls_run || !(!valid_1_reg || stall_csr || ld_pc || wfi_state ||
+                                (!ls_ph_reg[1] && ls_ph_reg[0]))};
+  assign mem_write =  ls_run && ls_st_reg;
+
+  always @ (posedge clk or negedge resetb) begin
+    if (!resetb) begin
+      mem_wdata <= 32'h0;
+      end
+    else begin
+      if (mem_rdy_v && ls_st_reg && ls_ph_reg[1]) mem_wdata <= ls_data_out;
+      end
+    end
+
+/*****************************************************************************************/
+/* read data assembly                                                                    */
+/*****************************************************************************************/
+  always @ (posedge clk or negedge resetb) begin
+    if (!resetb) begin
+      ls_din3_reg <=  8'h0;
+      ls_din2_reg <= 32'h0;
+      ls_din1_reg <= 32'h0;
+      end
+    else begin
+      if (mem_rdy_v && !ls_st_reg && ls_ph_reg[2]) ls_din3_reg <= mem_rdata[15:8];
+      if (mem_rdy_v && !ls_st_reg && ls_ph_reg[1]) ls_din2_reg <= mem_rdata;
+      if (mem_rdy_v && !ls_st_reg && ls_ph_reg[0]) ls_din1_reg <= mem_rdata;
+      end
+    end
+
+  assign sext1_07 = !ls_type_reg[2] && ls_din1_reg[7];
+  assign sext1_15 = !ls_type_reg[2] && ls_din1_reg[15];
+  assign sext1_23 = !ls_type_reg[2] && ls_din1_reg[23];
+  assign sext1_31 = !ls_type_reg[2] && ls_din1_reg[31];
+
+  always @ (mem32_reg or ls_type_reg or ls_sadd_reg or ls_din3_reg or ls_din2_reg or
+            ls_din1_reg or sext1_07 or sext1_15 or sext1_23 or sext1_31) begin
+    casex ({mem32_reg, ls_type_reg[1:0], ls_sadd_reg[1:0]})
+      5'b00010,
+      5'bx0000: mem_rdat = { {24{sext1_07}},   ls_din1_reg[7:0]  };
+      5'b00011,
+      5'bx0001: mem_rdat = { {24{sext1_15}},   ls_din1_reg[15:8] };
+      5'b00110,
+      5'bx0100: mem_rdat = { {16{sext1_15}},   ls_din1_reg[15:0] };
+      5'b001x1: mem_rdat = { {16{sext1_07}},   ls_din1_reg[7:0],   ls_din2_reg[15:8] };
+      5'b010x0: mem_rdat = {ls_din1_reg[15:0], ls_din2_reg[15:0] };
+      5'b010x1: mem_rdat = {ls_din1_reg[7:0],  ls_din2_reg[15:0],  ls_din3_reg};
+      5'b10010: mem_rdat = { {24{sext1_23}},   ls_din1_reg[23:16]};
+      5'b10011: mem_rdat = { {24{sext1_31}},   ls_din1_reg[31:24]};
+      5'b10101: mem_rdat = { {16{sext1_23}},   ls_din1_reg[23:8] };
+      5'b10110: mem_rdat = { {16{sext1_31}},   ls_din1_reg[31:16]};
+      5'b10111: mem_rdat = { {16{sext1_07}},   ls_din1_reg[7:0],   ls_din2_reg[31:24]};
+      5'b11001: mem_rdat = {ls_din1_reg[7:0],  ls_din2_reg[31:8] };
+      5'b11010: mem_rdat = {ls_din1_reg[15:0], ls_din2_reg[31:16]};
+      5'b11011: mem_rdat = {ls_din1_reg[23:0], ls_din2_reg[31:24]};
+      default:  mem_rdat =  ls_din1_reg;
+      endcase
+    end
+
+
+/*****************************************************************************************/
+/* clock 2 - memory access                                                               */
+/*****************************************************************************************/
+  always @ (posedge clk or negedge resetb) begin
+    if (!resetb) begin
+      ldpc_2_reg  <=  1'b0;
+      pc_2_reg    <= `RST_BASE;
+      valid_2_reg <=  1'b0;
+      end
+    else if (run_mem) begin
+      ldpc_2_reg  <= ldpc_1_reg;
+      pc_2_reg    <= pc_1_reg;
+      valid_2_reg <= !ld_pc && !wfi_reg && valid_1_reg;
+      end
+    end
+
+/*****************************************************************************************/
+/* clock 3 - pre-decode                                                                  */
+/*****************************************************************************************/
+  assign ld_insth = mem32_reg || ( word_inst && (ifull_3_reg == 3'b001));
+  assign ld_instl = mem32_reg || (!word_inst && (ifull_3_reg == 3'b001)) ||
+                    (ifull_3_reg == 3'b011) || (ifull_3_reg == 3'b000);
+
+  always @ (posedge clk or negedge resetb) begin
+    if (!resetb) begin
+      ifull_3_reg <=  3'h0;
+      inst_3_reg  <= 32'h0;
+      instu_3_reg <= 16'h0;
+      end
+    else if (run_dec) begin
+      ifull_3_reg <= (valid_2_reg && !ldpc_1_reg) ? ifull_3_nxt : 3'b000;
+      if (ld_insth) inst_3_reg[31:16] <= (mem32_reg) ? mem_idata[31:16] : mem_idata[15:0];
+      if (ld_instl) inst_3_reg[15:0]  <= mem_idata[15:0];
+      instu_3_reg <= inst_3_reg[31:16];
+      end
+    end
+
+  assign stall_align = valid_3_reg && ((word_instu && (ifull_3_reg == 3'b010)) ||
+                                       (word_inst  && (ifull_3_reg == 3'b001)));
+  assign word_instu  = &inst_3_reg[17:16];
+  assign word_inst   = &inst_3_reg[1:0];
+  assign stall_cmp   = ((ifull_3_reg == 3'b011) && !word_instu && !word_inst) ||
+                       ((ifull_3_reg == 3'b111) && !word_instu);
+
+  always @ (mem32_reg or ifull_3_reg or pc_2_reg or word_inst or word_instu) begin
+    case ({mem32_reg, ifull_3_reg})
+      4'b0000: ifull_3_nxt = 3'b001;
+      4'b0001: ifull_3_nxt = (word_inst)  ? 3'b011 : 3'b001;
+      4'b0011: ifull_3_nxt = 3'b001;
+      4'b1000: ifull_3_nxt = {2'b01, !pc_2_reg[1]};
+      4'b1010: ifull_3_nxt = (word_instu) ? 3'b111 : 3'b011;
+      4'b1011: ifull_3_nxt = (word_inst)  ? 3'b011 :
+                             (word_instu) ? 3'b111 : 3'b100;
+      4'b1100: ifull_3_nxt = 3'b011;
+      4'b1111: ifull_3_nxt = (word_instu) ? 3'b111 : 3'b100;
+      default: ifull_3_nxt = 3'b000;
+      endcase
+    end
+
+  assign opc[31:16] = (ifull_3_reg[2]) ? inst_3_reg[15:0] : inst_3_reg[31:16];
+  assign opc[15:0]  = (ifull_3_reg[2]) ? instu_3_reg :
+                      (ifull_3_reg[0]) ? inst_3_reg[15:0] : inst_3_reg[31:16];
+
+/*****************************************************************************************/
+/* stage 3 program counter                                                               */
+/*****************************************************************************************/
+  always @ (ifull_3_reg or word_inst) begin
+    case (ifull_3_reg)
+      3'b011:  pc_3_inc = {word_inst, !word_inst};
+      3'b111:  pc_3_inc = 2'b10;
+      default: pc_3_inc = 2'b01;
+      endcase
+    end
+
+`ifdef INSTANCE_INC
+  inst_inc  PC_3_INC  ( .inc_out(pc_3_nxt), .clk(clk), .inc_ain({pc_3_reg, 1'b0}),
+                        .inc_bin({pc_3_inc, 1'b0}) ); 
+`else
+  assign pc_3_nxt = {pc_3_reg, 1'b0} + {pc_3_inc, 1'b0};
+`endif
+
+  always @ (posedge clk or negedge resetb) begin
+    if (!resetb) begin
+      pc_3_reg    <= `RST_BASE;
+      valid_3_reg <=  1'b0;
+      end
+    else if (run_exe) begin
+      pc_3_reg    <= (valid_3_reg) ? pc_3_nxt[31:1] : pc_2_reg;
+      valid_3_reg <= !ld_pc && valid_2_reg;
+      end
     end
