@@ -131,3 +131,95 @@ begin
                     (mem32_reg) ? {pc_1_nxt[31:2], 1'b0} : pc_1_nxt[31:1];
     end
 end
+
+
+/*****************************************************************************************/
+/* load/store/amo state machine                                                          */
+/*****************************************************************************************/
+  always @ (mem32_reg or addr_out or type_out) begin
+    casex ({mem32_reg, type_out[1:0], addr_out[1:0]})
+      5'b001x1,
+      5'b01xx0,
+      5'b10111,
+      5'b11x01,
+      5'b11x1x: ls_ph_ini = 4'b0111;
+      5'b01xx1: ls_ph_ini = 4'b1111;
+      default:  ls_ph_ini = 4'b0011;
+      endcase
+    end
+
+  always @ (addr_out or type_out) begin
+    case ({type_out[1:0], addr_out[0]})
+      3'b100:  ls_ainc_ini = 2'h2;
+      default: ls_ainc_ini = 2'h1;
+      endcase
+    end
+
+`ifdef INSTANCE_INC
+  inst_inc LS_ADDR_INC ( .inc_out(ls_addr_nxt), .clk(clk), .inc_ain(ls_addr_reg),
+                         .inc_bin({1'b0, ls_ainc_reg}) ); 
+`else
+  assign ls_addr_nxt = ls_addr_reg + ls_ainc_reg;
+`endif
+
+  always @ (posedge clk or negedge resetb) begin
+    if (!resetb) begin
+      ls_addr_reg <= 32'h0;
+      ls_ainc_reg <=  2'h2;
+      ls_ph_reg   <=  4'h0;
+      ls_sadd_reg <= 32'h0;
+      ls_sinc_reg <=  2'h0;
+      ls_sph_reg  <=  4'h0;
+      ls_data_reg <= 32'h0;
+      ls_type_reg <=  3'h2;
+      ls_amo_reg  <=  1'b0;
+      ls_st_reg   <=  1'b0;
+      end
+    else begin
+      if ((ld_addr || stall_ldst) && mem_rdy_v) begin
+        ls_addr_reg <= (ld_addr) ? addr_out    :
+                       (ld_rmw)  ? ls_sadd_reg : ls_addr_nxt;
+        ls_ainc_reg <= (ld_addr) ? ls_ainc_ini :
+                       (ld_rmw)  ? ls_sinc_reg : 2'h2;
+        ls_ph_reg   <= (ld_addr) ? ls_ph_ini   :
+                       (ld_rmw)  ? ls_sph_reg  :
+                                   {1'b0, ls_ph_reg[3:2], (|ls_ph_reg[3:2] ||
+                                    (ls_ph_reg[1] && !ls_st_reg))};
+        end
+      if (ld_addr && mem_rdy_v) begin
+        ls_data_reg <= src2_5_out;
+        ls_sadd_reg <= addr_out;
+        ls_sinc_reg <= ls_ainc_ini;
+        ls_sph_reg  <= ls_ph_ini;
+        ls_type_reg <= type_out;
+        end
+      if ((ld_addr || ld_rmw) && mem_rdy_v) begin
+        ls_amo_reg  <= ld_rmw;
+        ls_st_reg   <= ld_rmw || st_out;
+        end
+      end
+    end
+
+  assign ld_rmw     = !ls_st_reg && amo_6_reg && (ls_ph_reg == 4'h1);
+  assign ls_run     = |ls_ph_reg[3:1];
+  assign stall_ldst = |ls_ph_reg;
+
+/*****************************************************************************************/
+/* dedicated amo alu                                                                     */
+/*****************************************************************************************/
+`ifdef INSTANCE_ADD
+  inst_add AMO_ADD   ( .add_out(ls_amo_add), .clk(clk), .add_ain(ls_data_reg),
+                       .add_bin(mem_rdat), .add_cyin(1'b0) ); 
+`else
+  assign ls_amo_add = ls_data_reg + mem_rdat;
+`endif
+
+  always @ (imm_6_reg or ls_amo_add or ls_amo_reg or ls_data_reg or mem_rdat) begin
+    case ({ls_amo_reg, imm_6_reg[11:7]})
+      6'b100000: ls_amo_out = ls_amo_add;
+      6'b100100: ls_amo_out = ls_data_reg ^ mem_rdat;
+      6'b101000: ls_amo_out = ls_data_reg | mem_rdat;
+      6'b101100: ls_amo_out = ls_data_reg & mem_rdat;
+      default:   ls_amo_out = ls_data_reg;
+      endcase
+    end
