@@ -223,3 +223,48 @@ end
       default:   ls_amo_out = ls_data_reg;
       endcase
     end
+
+/*****************************************************************************************/
+/* write data multiplexing                                                               */
+/*****************************************************************************************/
+  always @ (mem32_reg or ls_amo_out or ls_type_reg or ls_sadd_reg or ls_ph_reg) begin
+    casex ({mem32_reg, ls_type_reg[1:0], ls_sadd_reg[1:0], ls_ph_reg[3:2]})
+      7'b000x1xx,
+      7'b001x101,
+      7'b010x111,
+      7'b010x100,
+      7'b1xx01xx: ls_data_out = {ls_amo_out[23:0], ls_amo_out[31:24]};
+      7'b010x000,
+      7'b1xx10xx: ls_data_out = {ls_amo_out[15:0], ls_amo_out[31:16]};
+      7'b001x100,
+      7'b010x101,
+      7'b1xx11xx: ls_data_out = {ls_amo_out[7:0],  ls_amo_out[31:8]};
+      default:    ls_data_out =  ls_amo_out;
+      endcase
+    end
+
+  always @ (mem32_reg or ls_type_reg or ls_sadd_reg or ls_ph_reg) begin
+    casex ({mem32_reg, ls_type_reg[1:0], ls_sadd_reg[1:0], ls_ph_reg[3:2]})
+      7'b000x0xx,
+      7'b001x100,
+      7'b010x100,
+      7'b10000xx,
+      7'b1011100,
+      7'b1100100: ls_ble_out = 4'b0001;
+      7'b01xxx11,
+      7'b001xxx1,
+      7'b000x1xx,
+      7'b10001xx: ls_ble_out = 4'b0010;
+      7'b10010xx: ls_ble_out = 4'b0100;
+      7'b10101xx: ls_ble_out = 4'b0110;
+      7'b11x1100: ls_ble_out = 4'b0111;
+      7'b10011xx,
+      7'b10111x1,
+      7'b11x11x1: ls_ble_out = 4'b1000;
+      7'b10110xx,
+      7'b11x10x1: ls_ble_out = 4'b1100;
+      7'b11x01x1: ls_ble_out = 4'b1110;
+      7'b11x00xx: ls_ble_out = 4'b1111;
+      default:    ls_ble_out = 4'b0011;
+      endcase
+    end
