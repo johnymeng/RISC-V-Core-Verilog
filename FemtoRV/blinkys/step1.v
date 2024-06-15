@@ -11,7 +11,7 @@ module SOC(input CLK,
         counter <= counter+1;
     end
 
-    wire true = (counter == 4'b1111);
+    wire true = (counter == 5'b11111);
 
     assign LEDS = (true) ? count : 0;
     assign TXD = 1'b0;
