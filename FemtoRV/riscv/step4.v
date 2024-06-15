@@ -95,15 +95,14 @@ module SOC (
 	 instr <= MEM[PC];
 	 PC <= PC+1;
       end
-
-`ifdef BENCH      
-      if(isSYSTEM) $finish();
-`endif      
+    
+    if(isSYSTEM) $finish();
+     
    end
 
    assign LEDS = isSYSTEM ? 31 : {PC[0],isALUreg,isALUimm,isStore,isLoad};
    
-`ifdef BENCH   
+ 
    always @(posedge clk) begin
       $display("PC=%0d",PC);
       case (1'b1)
@@ -125,11 +124,11 @@ module SOC (
 	isSYSTEM: $display("SYSTEM");
       endcase 
    end
-`endif
+
 
    // Gearbox and reset circuitry.
    Clockworks #(
-     .SLOW(10) // Divide clock frequency by 2^21
+     .SLOW(21) // Divide clock frequency by 2^21
    )CW(
      .CLK(CLK),
      .RESET(RESET),

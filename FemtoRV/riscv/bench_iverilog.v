@@ -1,4 +1,4 @@
-module tb();
+module bench();
    reg CLK;
    wire RESET = 0; 
    wire [4:0] LEDS;

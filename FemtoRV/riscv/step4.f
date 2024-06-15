@@ -1,5 +1,5 @@
 step4.v
-tb.v
+bench_iverilog.v
 
 --binary
 
