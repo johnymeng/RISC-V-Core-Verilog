@@ -1,3 +1,8 @@
+step4.v
+tb.v
+
+--binary
+
 //enables strick warning
 -Wall
 
@@ -14,10 +19,10 @@
 --trace-fst
 
 //dump structs as human readable format
---tract-structs
+--trace-structs
 
 //all explicit x's are relplaced by constant value at runtime
---x-asign unique
+--x-assign unique
 
 //all veriables are randomly initialized
 --x-initial unique
