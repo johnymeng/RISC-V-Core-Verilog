@@ -1,9 +1,9 @@
-step5.v
+step8.v
 bench_iverilog.v
 
 --binary
 
-//enables strict warning
+//enables strick warning
 -Wall
 
 //doesn't exit on warnings
