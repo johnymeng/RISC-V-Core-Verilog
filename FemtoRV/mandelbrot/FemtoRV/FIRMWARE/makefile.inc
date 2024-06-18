@@ -9,7 +9,7 @@
 
 FIRMWARE_DIR=$(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
-include $(FIRMWARE_DIR)/config.mk
+include $(FIRMWARE_DIR)config.mk
 DEVICES_ASM=$(subst -D,-defsym ,$(DEVICES))
 
 show_config:

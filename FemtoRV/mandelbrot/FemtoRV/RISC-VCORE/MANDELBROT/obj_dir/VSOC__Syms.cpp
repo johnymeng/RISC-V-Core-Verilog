@@ -18,7 +18,7 @@ VSOC__Syms::VSOC__Syms(VerilatedContext* contextp, const char* namep, VSOC* mode
     , TOP{this, namep}
 {
         // Check resources
-        Verilated::stackCheck(1081);
+        Verilated::stackCheck(304);
     // Configure time unit / time precision
     _vm_contextp__->timeunit(-12);
     _vm_contextp__->timeprecision(-12);
