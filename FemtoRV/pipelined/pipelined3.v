@@ -1,8 +1,3 @@
-/**
- * pipeline3.v
- * Step 3: "sequential pipeline"
- */
- 
 `default_nettype none
 `include "clockworks.v"
 `include "emitter_uart.v"
