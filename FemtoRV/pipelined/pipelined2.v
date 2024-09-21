@@ -1,9 +1,3 @@
-/**
- * pipeline2.v
- * Let us see how to morph our multi-cycle CPU into a pipelined CPU !
- * Step 2: cycle and instret counters
- *   (not a pipelined processor yet)
- */
 
 `default_nettype none
 `include "clockworks.v"
